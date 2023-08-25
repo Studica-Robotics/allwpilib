@@ -322,11 +322,15 @@ if (WITH_WPILIB)
     if (WITH_EXAMPLES)
         add_subdirectory(wpilibcExamples)
     endif()
-    add_subdirectory(myRobot)
+#     add_subdirectory(myRobot)
 endif()
 
 if (WITH_SIMULATION_MODULES AND NOT WITH_EXTERNAL_HAL)
     add_subdirectory(simulation)
+endif()
+
+if (WITH_ONLY_HAL)
+    add_subdirectory(hal)
 endif()
 
 configure_file(wpilib-config.cmake.in ${WPILIB_BINARY_DIR}/wpilib-config.cmake )

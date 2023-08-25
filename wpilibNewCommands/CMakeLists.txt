@@ -48,7 +48,7 @@ if (MSVC OR FLAT_INSTALL_WPILIB)
      set(wpilibNewCommands_config_dir share/wpilibNewCommands)
  endif()
 
- configure_file(wpilibNewCommands-config.cmake.in ${WPILIB_BINARY_DIR}/wpilibNewCommands-config.cmake)
+ configure_file(wpilibNewCommands-config.cmake ${WPILIB_BINARY_DIR}/wpilibNewCommands-config.cmake)
  install(FILES ${WPILIB_BINARY_DIR}/wpilibNewCommands-config.cmake DESTINATION ${wpilibNewCommands_config_dir})
  install(EXPORT wpilibNewCommands DESTINATION ${wpilibNewCommands_config_dir})
 

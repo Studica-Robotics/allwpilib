@@ -1,0 +1,269 @@
+plugins {
+	id 'base'
+	id 'java'
+	id 'maven-publish'
+	id 'signing'
+}
+
+configurations {
+	deployerJars
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	deployerJars "org.apache.maven.wagon:wagon-http:2.2"
+}
+
+def outputsFolder = file("$buildDir/allOutputs")
+
+task copyAllOutputs(type: Copy) {
+	destinationDir outputsFolder
+}
+
+build.dependsOn copyAllOutputs
+
+ext.addTaskToCopyAllOutputs = { task ->
+	copyAllOutputs.dependsOn task
+	copyAllOutputs.inputs.file task.archivePath
+	copyAllOutputs.from task.archivePath
+}
+
+task cppSourcesZip(type: Zip) {
+	setArchiveName("sources.zip")
+	from ("$buildDir/../sources") {
+		include "**/*"
+		into "/"
+	}
+}
+
+task cppHeadersZip(type: Zip) {
+	setArchiveName("headers.zip")
+	from ("$buildDir/../headers") {
+		include "**/*"
+		into "/"
+	}
+}
+
+build.dependsOn cppHeadersZip
+addTaskToCopyAllOutputs(cppHeadersZip)
+build.dependsOn cppSourcesZip
+addTaskToCopyAllOutputs(cppSourcesZip)
+
+/* Create Zip (C++/Java Shared Libraries, Debug) */
+task packageSharedDebugDistribution(type: Zip) {
+	println "buildDir:  $buildDir"
+	setArchiveName("linuxraspbiandebug.zip")
+	from("$buildDir/../../lib") {
+		include "**/libwpiHald.so"
+		include "**/libwpiHaljni.so"
+		include "**/libvmxHaljni.so"
+		include "**/libCTRE_PhoenixPlatform.so"
+		into "linux/raspbian/shared"
+	}
+	from("$rootDir") {
+		include "*.txt"
+	}
+}
+
+/* Create Zip (C++/Java Shared Libraries, Release) */
+task packageSharedReleaseDistribution(type: Zip) {
+	println "buildDir:  $buildDir"
+	setArchiveName("linuxraspbian.zip")
+	from("$buildDir/../../lib") {
+		include "**/libwpiHal.so"
+		include "**/libwpiHaljni.so"
+		include "**/libvmxHaljni.so"
+		include "**/libCTRE_PhoenixPlatform.so"
+		into "linux/raspbian/shared"
+	}
+	from("$rootDir") {
+		include "*.txt"
+	}
+}
+
+/* Create Zip (C++ Only Static library, Debug) */
+task packageStaticDebugDistribution(type: Zip) {
+	println "buildDir:  $buildDir"
+	setArchiveName("linuxraspbianstaticdebug.zip")
+	from("$buildDir/../../lib") {
+		include "**/libwpiHald.a"
+		include "**/libCTRE_PhoenixPlatform.so"
+		into "linux/raspbian/static"
+	}
+	from("$rootDir") {
+		include "*.txt"
+	}
+}
+
+/* Create Zip (C++ Only Static library, Release) */
+task packageStaticReleaseDistribution(type: Zip) {
+	println "buildDir:  $buildDir"
+	setArchiveName("linuxraspbianstatic.zip")
+	from("$buildDir/../../lib") {
+		include "**/libwpiHal.a"
+		include "**/libCTRE_PhoenixPlatform.so"
+		into "linux/raspbian/static"
+	}
+	from("$rootDir") {
+		include "*.txt"
+	}
+}
+
+/* Variables which are modifed by CMakeLists.txt */
+
+def packageType		= ${dist_packageType}
+def packageClassifier	= ${dist_packageClassifier}
+def packageVersion	= ${dist_packageVersion}
+def packageNamespace	= ${dist_packageNamespace}
+def packageArtifactId	= ${dist_packageArtifactId}
+version = packageVersion
+
+def customizePom(pom) {
+	pom.withXml {
+		def root = asNode()
+
+		// add all items necessary for maven central publication
+		root.children().last() + {
+			resolveStrategy = Closure.DELEGATE_FIRST
+
+			description 'VMXpi WPI FRC HAL Library'
+			name 'hal-cpp'
+			url 'https://github.com/kauailabs/allwpilib'
+			organization {
+				name 'com.github.kauailabs'
+				url 'https://github.com/kauailabs'
+			}
+			issueManagement {
+				system 'GitHub'
+				url 'https://github.com/kauailabs/allwpilib/issues'
+			}
+			licenses {
+				license {
+					name 'The FIRST License (FIRST)'
+					url 'https://github.com/wpilibsuite/allwpilib/blob/master/LICENSE.txt'
+					distribution 'repo'
+				}
+			}
+			scm {
+				url 'https://github.com/kauailabs/allwpilib.git'
+				connection 'scm:git:git://git@github.com:kauailabs/allwpilib.git'
+				developerConnection 'scm:git:ssh://git@github.com:kauailabs/allwpilib.git'
+			}
+			developers {
+				developer {
+					name 'kauailabs'
+				}
+			}
+		}
+	}
+}
+
+signing {
+	sign configurations.archives
+}
+
+model {
+	tasks.generatePomFileForMavenPublication {
+		destination = file("$buildDir/publications/maven/pom-default.xml")
+	}
+	tasks.publishMavenPublicationToMavenLocal {
+		dependsOn project.tasks.signArchives
+	}
+	tasks.publishMavenPublicationToMavenRepository {
+		dependsOn project.tasks.signArchives
+	}
+}
+
+//artifacts {
+//	archives packageType
+//}
+
+publishing {
+
+	repositories {
+		maven {
+			url "https://oss.sonatype.org/service/local/staging/deploy/maven2"
+			credentials {
+				// Note:  Credentials are stored in ~/.gradle/gradle.properties
+				username sonatypeUsername
+				password sonatypePassword
+			}
+		}
+	}
+
+	publications {
+		maven(MavenPublication) {
+			groupId packageNamespace
+			artifactId packageArtifactId
+// 			version packageVersion
+			version '2023.4.3-vmxpi-test-3'
+			// create sources zip artifact
+			def sourcesArtifact = artifact source:  cppSourcesZip, classifier: 'sources', extension: 'zip'
+			cppSourcesZip.doLast {
+				def signedSourcesFile = signing.sign(sourcesArtifact.file)
+				artifact(signedSourcesFile.signatureFiles[0]) {
+					classifier = 'sources'
+					extension = 'zip.asc'
+				}
+			}
+
+			// create headers zip artifact
+			def headersArtifact = artifact source:  cppHeadersZip, classifier: 'headers', extension: 'zip'
+			cppHeadersZip.doLast {
+				def signedHeadersFile = signing.sign(headersArtifact.file)
+				artifact(signedHeadersFile.signatureFiles[0]) {
+					classifier = 'headers'
+					extension = 'zip.asc'
+				}
+			}
+
+			// create primary zip artifact
+			def zipArtifact = artifact source: packageType, classifier: packageClassifier, extension: 'zip'						
+			println "Zip Artifact File: $zipArtifact.file"
+			println zipArtifact
+			// sign the zip artifact
+			packageType.doLast { 
+				def signedFile = signing.sign(zipArtifact.file)
+				artifact(signedFile.signatureFiles[0]) {
+					classifier = packageClassifier
+					extension = 'zip.asc'
+				}
+				println "Zip Signing File:  $signedFile.signatureFiles[0]"
+			}
+
+			customizePom(pom)
+
+			// create the signed pom artifact
+			def pomFile = file("$buildDir/publications/maven/pom-default.xml")
+			pom.withXml {
+				writeTo(pomFile)
+				signing.sign(pomFile)
+			}
+
+			def pomAscFile = "$buildDir/publications/maven/pom-default.xml.asc"
+			artifact(pomAscFile) {
+				classifier = null
+				extension = 'pom.asc'
+			}
+			println "POM Signing File:  $pomAscFile"
+
+			// create the signed artifacts
+//			project.tasks.signArchives.signatureFiles.each {
+//				artifact(it) {
+//					def matcher = it.file =~ /-(linuxraspbian|linuxraspbiandebug|linuxraspbianstatic|linuxraspbianstaticdebug)\.zip.asc$/
+//					if (matcher.find()) {
+//						classifer = matcher.group(1)
+//					} else {
+//						classifier = null
+//					}
+//					extension = 'zip.asc'
+//					println it.file
+//					println it.classifier
+//				}
+//			}
+		}
+	}
+}
